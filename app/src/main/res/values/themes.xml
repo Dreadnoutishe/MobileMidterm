@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MarsColonyManager" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0C121C</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorAccent">#FFAA7A</item>
+    </style>
+</resources>
