@@ -94,16 +94,3 @@ I collect ViewModel `StateFlow` in Compose with `collectAsStateWithLifecycle()`.
 
 ![Midterm landscape layout](Screenshots/3.png)
 
-## How I push the update to GitHub
-
-I use the same repository and push to the existing `main` branch. From the project root, I run these commands.
-
-```powershell
-git status --short --branch
-git add app gradle build.gradle.kts README.md Mars-Colony-Assignment-Guide.pdf Screenshots
-git status --short
-git commit -m "Add persistent maintenance work orders"
-git push origin main
-```
-
-I check the staged files before committing and confirm that the new commit appears on GitHub. If I push before taking the screenshots, I can add them in a follow-up commit.
