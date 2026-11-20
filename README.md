@@ -66,8 +66,6 @@ I kept the original activity, model, ViewModel, screen, component, and theme fol
 
 I collect ViewModel `StateFlow` in Compose with `collectAsStateWithLifecycle()`. Screen callbacks call ViewModel methods. The repositories use Room DAOs to read and write data. Room `Flow` then sends the latest stored orders to the ViewModels, so a change on the detail screen appears on the list automatically. For an order update with a history entry, I use a database transaction so both changes are saved together.
 
-My [assignment defense guide](Mars-Colony-Assignment-Guide.pdf) explains the data flow and contains a short demo walkthrough.
-
 ## Screenshots
 
 ### Maintenance
