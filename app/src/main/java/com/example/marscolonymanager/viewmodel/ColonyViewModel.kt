@@ -1,74 +1,132 @@
 package com.example.marscolonymanager.viewmodel
 
 import android.os.Bundle
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.marscolonymanager.model.*
+import com.example.marscolonymanager.data.ColonyRepository
+import com.example.marscolonymanager.model.ColonyRules
+import com.example.marscolonymanager.model.ColonyState
+import com.example.marscolonymanager.model.MissionReport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
-class ColonyViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel() {
-    private val _colonyState = MutableStateFlow(restore() ?: ColonyState())
-    val colonyState: StateFlow<ColonyState> = _colonyState.asStateFlow()
-    val crew: List<CrewMember> = ColonyRules.crew
-    val missions: List<Mission> = ColonyRules.missions
+data class ColonyUiState(
+    val colony: ColonyState? = null,
+    val storageError: String? = null
+)
+
+class ColonyViewModel(
+    private val savedStateHandle: SavedStateHandle,
+    private val repository: ColonyRepository
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(ColonyUiState())
+    val uiState = _uiState.asStateFlow()
+    val crew = ColonyRules.crew
+    val missions = ColonyRules.missions
+    private val writes = Mutex()
+    private var loadJob: Job? = null
     private var missionJob: Job? = null
 
-    init { if (_colonyState.value.missionInProgress) runMission() }
-
-    fun launchMission(missionId: Int, crewId: Int) {
-        val current = _colonyState.value
-        val next = ColonyRules.begin(current, missionId, crewId)
-        if (next == current) return
-        publish(next) // Mark busy immediately, preventing duplicate launches.
-        runMission()
+    init {
+        retryLoad()
     }
 
-    private fun runMission() {
+    fun retryLoad() {
+        if (loadJob?.isActive == true) return
+        if (_uiState.value.colony != null && _uiState.value.storageError == null) return
+        _uiState.value = ColonyUiState()
+        loadJob = viewModelScope.launch {
+            try {
+                val colony = writes.withLock {
+                    repository.loadColony() ?: (restoreMidtermState() ?: ColonyState()).also {
+                        repository.saveColony(it)
+                    }
+                }
+                savedStateHandle.remove<Bundle>("colony")
+                _uiState.value = ColonyUiState(colony)
+                if (colony.missionInProgress) {
+                    missionJob = viewModelScope.launch { runMission() }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                reportStorageError(error)
+            }
+        }
+    }
+
+    fun launchMission(missionId: Int, crewId: Int) {
         if (missionJob?.isActive == true) return
         missionJob = viewModelScope.launch {
-            val member = crew.find { it.id == _colonyState.value.activeCrewId } ?: return@launch
-            val duration = ColonyRules.durationSeconds(member)
-            while (_colonyState.value.progressSeconds < duration) {
-                delay(1_000L) // Suspends this coroutine; the main thread can still render and navigate.
-                val current = _colonyState.value
-                if (!current.missionInProgress) return@launch
-                publish(current.copy(progressSeconds = current.progressSeconds + 1))
-            }
-            publish(ColonyRules.complete(_colonyState.value))
+            if (updateColony { ColonyRules.begin(it, missionId, crewId) }) runMission()
         }
     }
 
     fun resetColony() {
-        missionJob?.cancel()
-        missionJob = null
-        publish(ColonyState())
-    }
-
-    private fun publish(state: ColonyState) {
-        _colonyState.value = state
-        savedStateHandle["colony"] = Bundle().apply {
-            putInt("version", 1); putInt("sol", state.sol)
-            putFloat("oxygen", state.oxygen); putFloat("energy", state.energy); putFloat("food", state.food)
-            putInt("research", state.researchPoints); putInt("completed", state.completedSols)
-            putInt("resting", state.restingCrewId ?: -1); putInt("mission", state.activeMissionId ?: -1)
-            putInt("crew", state.activeCrewId ?: -1); putInt("progress", state.progressSeconds)
-            putParcelableArrayList("reports", ArrayList(state.reports.map { report -> Bundle().apply {
-                putInt("sol", report.sol); putString("mission", report.missionName); putString("crew", report.crewName)
-                putFloatArray("before", floatArrayOf(report.oxygenBefore, report.energyBefore, report.foodBefore))
-                putFloatArray("after", floatArrayOf(report.oxygenAfter, report.energyAfter, report.foodAfter))
-                putInt("research", report.researchGain); putBoolean("bonus", report.specialistBonus)
-            } }))
+        viewModelScope.launch {
+            writes.withLock {
+                if (_uiState.value.colony == null || _uiState.value.storageError != null) return@withLock
+                if (saveColony(ColonyState())) {
+                    missionJob?.cancel()
+                    missionJob = null
+                }
+            }
         }
     }
 
+    private suspend fun runMission() {
+        val crewId = _uiState.value.colony?.activeCrewId ?: return
+        val member = crew.first { it.id == crewId }
+        val duration = ColonyRules.durationSeconds(member)
+        while (_uiState.value.colony?.missionInProgress == true) {
+            // A midterm save can already be at the final second. Complete it without waiting again.
+            if ((_uiState.value.colony?.progressSeconds ?: 0) < duration) delay(1_000L)
+            val saved = updateColony { current ->
+                if (!current.missionInProgress) current else {
+                    val next = current.copy(progressSeconds = (current.progressSeconds + 1).coerceAtMost(duration))
+                    if (next.progressSeconds == duration) ColonyRules.complete(next) else next
+                }
+            }
+            if (!saved) return
+        }
+    }
+
+    private suspend fun updateColony(transform: (ColonyState) -> ColonyState): Boolean = writes.withLock {
+        val current = _uiState.value.colony ?: return@withLock false
+        if (_uiState.value.storageError != null) return@withLock false
+        val next = transform(current)
+        next != current && saveColony(next)
+    }
+
+    private suspend fun saveColony(colony: ColonyState): Boolean {
+        return try {
+            repository.saveColony(colony)
+            _uiState.value = ColonyUiState(colony)
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            reportStorageError(error)
+            false
+        }
+    }
+
+    private fun reportStorageError(error: Exception) {
+        Log.e("Expedition", "Unable to access expedition save", error)
+        _uiState.update { it.copy(storageError = "Could not access the expedition save. Try again.") }
+    }
+
     @Suppress("DEPRECATION")
-    private fun restore(): ColonyState? = runCatching {
+    private fun restoreMidtermState(): ColonyState? = runCatching {
         val saved = savedStateHandle.get<Bundle>("colony") ?: return@runCatching null
         require(saved.getInt("version") == 1)
         val reports = saved.getParcelableArrayList<Bundle>("reports").orEmpty().map { record ->

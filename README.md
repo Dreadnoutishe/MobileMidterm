@@ -1,90 +1,111 @@
-# Mars Colony Manager — Midterm
+# Mars Colony Manager
 
-A seven-sol survival game built on the original Assignment 2 project using Kotlin, Jetpack Compose,
-Material 3, ViewModel, and StateFlow. Lead Ares-1 through seven missions while protecting oxygen,
-energy, and food. Pick a mission, assign a crew leader, inspect the forecast, and launch.
+I built Mars Colony Manager as a seven-sol survival game in Kotlin with Jetpack Compose. I extended the midterm version with Room storage and a Maintenance tab where I can create work orders, track progress, and review what happened.
 
-## What's new
+## What I added
 
-- Four functional screens connected with **Navigation Compose**: Colony, Missions, Crew, and Reports.
-- A clear seven-sol win condition and resource-depletion loss condition, with score and restart.
-- Timed, non-blocking missions using **viewModelScope**, **delay**, and live progress.
-- Crew skills affect rewards; Sarah's Pilot skill gives faster missions and extra research.
-- The most recent mission leader rests for the next mission, encouraging crew rotation.
-- Exact previews show resources after rewards, costs, storage caps, and daily consumption.
-- A mission log records each leader, before/after resources, and research reward.
-- Improved Mars colours, icons, resource cards, native habitat illustration, and in-app help.
-- State survives rotation. SavedStateHandle also supports Android saved-instance restoration,
-  including an unfinished mission. This is not a permanent disk-save system: removing the app's task
-  or force-stopping it can start a fresh colony.
+- I added a **Maintenance** tab with a work-order list, individual order details, and a shared create/edit form. The list uses a `LazyColumn` keyed by each order's Room ID. Navigation Compose uses that ID to open the corresponding order.
+- I added a work-order workflow that moves from **Planned** to **In progress** and finally to **Completed**. To complete a job, I first start it and then check **Parts ready** and **Safety checked**. I can clear either check while the job is in progress.
+- I added a timestamped history of creation, edits, checklist changes, and status changes. I can delete an order and its history after confirming the action.
+- I added local storage for the expedition and maintenance records. When I reopen the app, I can see saved orders, activity history, reports, resources, and mission progress. An unfinished mission resumes from its saved progress.
 
-## How to play
+## How I play the expedition
 
-Start with 65 oxygen, 60 energy, and 60 food. Each resource has a storage cap of 100.
+I start with 65 oxygen, 60 energy, and 60 food. Each resource has a storage cap of 100.
 
-1. On Missions, choose a leader using the horizontally scrolling crew selector, or assign one from Crew.
-2. Compare the three mission forecasts. Costs and daily consumption are already included.
-3. Launch one mission and wait for completion (5 seconds normally; 3 seconds with Sarah).
-4. The mission rewards are applied, daily supplies are consumed, the report is recorded, and the next sol begins.
-5. Repeat until seven missions are completed. All three resources must remain above zero, including on sol seven.
+1. On **Missions**, I choose a leader in the crew selector. I can also assign a leader from **Crew**.
+2. I compare the three mission forecasts, which already include costs and daily consumption.
+3. I launch one mission. It takes five seconds with most crew members and three with Sarah.
+4. When the mission ends, I check **Reports** for the leader, research reward, and before/after resources. The sol advances and that leader rests for the next mission.
+5. I win by completing seven missions with all three resources above zero. If a resource reaches zero, the expedition ends.
 
-There is no resource drain while deciding. Only one mission can run at a time. You can navigate or rotate
-while it runs. The most recent leader becomes available again after a different person completes a mission.
-The restart icon asks for confirmation and cancels an active mission safely.
+Supplies stay constant while I plan. Only one mission can run at a time, and I can change screens or rotate the device while it runs. The restart button confirms before resetting the expedition and cancelling an active mission. Maintenance data is stored separately from the expedition.
 
 ### Mission effects
 
-| Mission | Normal reward | Energy launch cost | Specialist skill |
-|---|---:|---:|---|
-| Search for Water | +38 oxygen | 8 | Geology |
-| Solar Array Repair | +40 energy | 0 | Engineering |
-| Greenhouse Expedition | +38 food | 6 | Biology |
+| Mission | Base supply reward | Energy cost | Specialist skill | Base research |
+|---|---:|---:|---|---:|
+| Search for Water | +38 oxygen | 8 | Geology | 100 |
+| Solar Array Repair | +40 energy | 0 | Engineering | 120 |
+| Greenhouse Expedition | +38 food | 6 | Biology | 150 |
 
-Every completion additionally consumes **14 oxygen, 12 energy, and 13 food**.
-The mission energy cost is deducted, rewards fill storage up to 100, and then daily consumption applies.
-A matching specialist adds **8 to the main supply reward** and **25 research**. Overflow is discarded;
-the forecast shows the actual change after the storage cap.
+Every completion consumes **14 oxygen, 12 energy, and 13 food**. The game deducts the launch cost, fills supplies up to 100, then applies daily consumption. A matching specialist grants eight additional units of the mission's main supply and 25 research.
 
-| Crew member | Existing skills used in the game |
+| Crew member | Skills used in the game |
 |---|---|
-| Alex | Engineering: solar specialist |
-| Dr. Miller | Geology and Biology: water and greenhouse specialist |
-| Sarah | Piloting: 3-second missions and +25 research on any mission |
-| Emma | Engineering: solar specialist |
-| David | Geology: water specialist |
+| Alex | Engineering for solar repairs |
+| Dr. Miller | Geology and Biology for water or greenhouse missions |
+| Sarah | Piloting for three-second missions and 25 extra research |
+| Emma | Engineering for solar repairs |
+| David | Geology for water missions |
 
-Everyone can lead every mission when available; specialists earn the stated bonus.
-Base research rewards are 100 (water), 120 (solar), and 150 (greenhouse).
-Score = research + 2 × remaining oxygen/energy/food + 300 for surviving all seven sols.
+My score is research plus twice the total remaining supplies, with 300 extra points for surviving all seven sols.
 
-## Project structure
+## How I use Maintenance
 
-The original package, models, ViewModel, screens, component names, and theme folders are retained.
-Only four Kotlin files were added; 
+1. I open **Maintenance** and create an order with a title and location. I can add optional notes. The form trims whitespace and checks for a title of up to 80 characters, a location of up to 60, and notes of up to 500. It shows an error next to the field that needs fixing.
+2. I open the order from the list to read its details or edit its title, location, and notes.
+3. I start the order, mark **Parts ready** and **Safety checked**, and complete it once both boxes are checked. I can review how the order changed in its activity history.
+4. I can delete the order from its detail screen. I can cancel the confirmation to keep the order and its history.
 
-| Location | Responsibility |
+## How I structured the code
+
+I kept the original activity, model, ViewModel, screen, component, and theme folders and added a `data/` package for Room and repositories.
+
+| File or package | Role |
 |---|---|
-| `MainActivity.kt` | Activity, Navigation Compose, four tabs, help/restart dialogs, shared crew selection |
-| `model/ColonyState.kt` | Immutable colony resources, progress, outcome, and mission reports |
-| `model/CrewMember.kt` | Original crew information plus skill-matching helpers |
-| `model/Mission.kt` | Mission costs/rewards and the forecast data model |
-| `model/ColonyRules.kt` (new) | Crew/mission data, forecasts, launch validation, completion rules |
-| `model/MissionReport.kt` (new) | A completed sol's before/after record |
-| `viewmodel/ColonyViewModel.kt` | StateFlow, coroutine mission lifecycle, reset, SavedStateHandle |
-| `ui/components/` | Existing cards plus shared `ColonyComponents.kt` (new) |
-| `ui/screens/` | Original three screens plus `ReportsScreen.kt` (new) |
-| `ui/theme/` | Mars colours and consistent typography |
+| `MainActivity.kt` | Hosts the app and connects the expedition and maintenance destinations with Navigation Compose |
+| `ui/screens/` and `ui/components/` | Display state and send button clicks, form changes, and other events back through callbacks |
+| `viewmodel/ColonyViewModel.kt` | Runs the mission timer and saves the expedition through the repository |
+| `viewmodel/WorkOrderViewModel.kt` | Exposes the work-order list and details and handles status, checklist, and delete actions |
+| `viewmodel/WorkOrderFormViewModel.kt` | Holds the create/edit form state, validates fields, and handles save |
+| `model/` | Contains the game and work-order models and the expedition rules |
+| `data/ColonyDatabase.kt` | Opens the local Room database, which stores work orders, activity entries, expedition progress, and mission reports |
+| `data/WorkOrderRepository.kt`, `data/WorkOrderDao.kt` | Read and write orders and their history |
+| `data/ColonyRepository.kt`, `data/ExpeditionDao.kt` | Read and write the expedition and its reports |
 
-The UI collects state with `collectAsStateWithLifecycle()`. Small UI selections and search use
-`rememberSaveable`; temporary dialogs and derived forecasts use `remember`. Crew selection is hoisted
-above the screens, and card buttons emit actions to the ViewModel. Forecast and completion use the same rules.
+I collect ViewModel `StateFlow` in Compose with `collectAsStateWithLifecycle()`. Screen callbacks call ViewModel methods. The repositories use Room DAOs to read and write data. Room `Flow` then sends the latest stored orders to the ViewModels, so a change on the detail screen appears on the list automatically. For an order update with a history entry, I use a database transaction so both changes are saved together.
+
+My [assignment defense guide](Mars-Colony-Assignment-Guide.pdf) explains the data flow and contains a short demo walkthrough.
 
 ## Screenshots
 
-Are located in the Screenshots folder.
+### Maintenance
 
-![Dashboard — ](Screenshots/1.png)
+![Maintenance list with three work orders](Screenshots/maintenance-list.png)
 
-![Missions — ](Screenshots/2.png)
+**Maintenance list.** I can see my work orders and how many are planned, in progress, or completed.
 
-![Landscape — ](Screenshots/3.png)
+![Planned Finding water work order](Screenshots/work-order-planned.png)
+
+**Planned.** I review the Finding water order before I start it. The activity history shows when I created it.
+
+![Finding water work order in progress with the completion button disabled](Screenshots/work-order-in-progress.png)
+
+**In progress.** I start the order. The Complete button stays disabled until I mark both checklist items.
+
+![Completed Finding water work order showing the checklist and activity history](Screenshots/work-order-completed.png)
+
+**Completed.** I finish the checklist and complete the order. I can see the completion recorded in the activity history.
+
+### Midterm
+
+![Midterm colony dashboard](Screenshots/1.png)
+
+![Midterm mission screen](Screenshots/2.png)
+
+![Midterm landscape layout](Screenshots/3.png)
+
+## How I push the update to GitHub
+
+I use the same repository and push to the existing `main` branch. From the project root, I run these commands.
+
+```powershell
+git status --short --branch
+git add app gradle build.gradle.kts README.md Mars-Colony-Assignment-Guide.pdf Screenshots
+git status --short
+git commit -m "Add persistent maintenance work orders"
+git push origin main
+```
+
+I check the staged files before committing and confirm that the new commit appears on GitHub. If I push before taking the screenshots, I can add them in a follow-up commit.
